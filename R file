@@ -1,0 +1,197 @@
+set.seed(1101)
+data = read.csv("diabetes-dataset.csv", sep = ",")
+
+head(data)
+names(data)
+dim(data)
+
+unique(data$smoking_history)
+
+# Summary statistics for all regressors and response variables 
+summary(data)
+
+# Visualizing the distribution of each variable
+par(mfrow = c(1,1))
+
+  #Quantitative Regressors
+  sd(data$age)
+  sd(data$bmi)
+  sd(data$HbA1c_level)
+  sd(data$blood_glucose_level)
+  hist(data$age, main="Age", xlab="Age", ylab = "Number of Respondents", col="blue")
+  hist(data$bmi, main="bmi", xlab="bmi", ylab = "Number of Respondents", col="red")
+  hist(data$HbA1c_level, main="HbA1c level", xlab="HbA1c_level", ylab = "Number of Respondents", col="yellow")
+  hist(data$blood_glucose_level, main="Blood Glucose Level", xlab="blood glucose level", ylab = "Number of Respondents", col="green")
+  
+  #Categorical Regressors
+  prop.table(table(data$gender))
+  prop.table(table(data$hypertension))
+  prop.table(table(data$heart_disease))
+  prop.table(table(data$smoking_history))
+  
+  #Response Variable
+  prop.table(table(data$diabetes))
+  
+  
+#Association between Quantitative Variables & Diabetes
+  attach(data)
+  boxplot(age ~ diabetes, col = "blue", main = "Age vs Diabetes")
+  boxplot(bmi ~ diabetes, col = "red", main = "bmi vs Diabetes")
+  boxplot(HbA1c_level ~ diabetes, col = "yellow", main = "HbA1c vs Diabetes")
+  boxplot(blood_glucose_level ~ diabetes, col = "green", main = "blood_glucose vs Diabetes")
+  t.test(age~diabetes, data = data)
+
+#Association between Categorical Variables & Diabetes
+  prop.table(table(gender,diabetes), "diabetes")
+  prop.table(table(hypertension , diabetes), "diabetes")
+  prop.table(table(heart_disease ,diabetes), "diabetes")
+
+  #Association between smoking history(Categorical) & Diabetes (>2 categories)
+  #Current vs Diabetes
+    current_smokers = data[data$smoking_history == "current", ]
+    table1 = table(current_smokers$smoking_history, current_smokers$diabetes)
+    prop.table(table1)
+    
+  #Ever vs Diabetes
+    ever_smokers = data[data$smoking_history == "ever", ]
+    table2 = table(ever_smokers$smoking_history, ever_smokers$diabetes)
+    prop.table(table2)
+    
+  #Former vs Diabetes
+    former_smokers = data[data$smoking_history == "former", ]
+    table3 = table(former_smokers$smoking_history, former_smokers$diabetes)
+    prop.table(table3)
+    
+  #Never vs Diabetes
+    never_smokers = data[data$smoking_history == "never", ]
+    table4 = table(never_smokers$smoking_history, never_smokers$diabetes)
+    prop.table(table4)
+    
+  #Not_Current vs Diabetes
+    not_current_smokers = data[data$smoking_history == "not current", ]
+    table5 = table(not_current_smokers$smoking_history, not_current_smokers$diabetes)
+    prop.table(table5)
+
+  #No_Info vs Diabetes
+    no_info_smokers = data[data$smoking_history == "No Info", ]
+    table6 = table(no_info_smokers$smoking_history, no_info_smokers$diabetes)
+    prop.table(table6)
+    
+
+
+#### Models ####
+
+#Preparing categorical data
+n = dim(data)[1]
+test = sample(1:n, 0.2*n) 
+data$gender = ifelse(data$gender == "Male", 0, ifelse(data$gender == "Female", 1, 2))
+data$smoking_history = ifelse(data$smoking_history == "current",0,
+                              ifelse(data$smoking_history == "ever",1,
+                                     ifelse(data$smoking_history == "former",2,
+                                            ifelse(data$smoking_history == "never",3,
+                                                   ifelse(data$smoking_history == "not current",4,5
+                                                   )))))
+
+
+data[c(1,3,4,5,9)] = lapply(data[c(1,3,4,5,9)],factor) 
+
+
+#Logistic Regression
+
+  #Testing Removal of insignificant categories (Gender and Smoking History)
+  M1 = glm(diabetes ~ age + blood_glucose_level + HbA1c_level + bmi 
+            + heart_disease + hypertension, data = data[-test, ], family = binomial)
+  summary(M1) #AUC: 0.9609 #FNR: 0.3818
+  
+  #Testing Removal of insignificant categories (Smoking History)
+  M1 = glm(diabetes ~ age + gender + blood_glucose_level + HbA1c_level + bmi 
+           + heart_disease + hypertension, data = data[-test, ], family = binomial)
+  summary(M1) #AUC:0.9612  #FNR: 0.3818
+  
+  #Chosen logistic regression model with no change due to better FNR and AUC
+  M1 = glm(diabetes ~., data = data[-test, ], family = binomial)
+  summary(M1) #AUC: 0.9619 #FNR: 0.376
+
+  #ROC Curve
+  library(ROCR)
+  prob = predict(M1, newdata = data[test,1:8], type ="response")
+  pred = prediction(prob , data[test,9]) #matches probabilities with the 0s & 1s of response
+  roc = performance(pred , "tpr", "fpr")
+  auc = performance(pred , measure ="auc")
+  auc@y.values[[1]] #0.9619
+  plot(roc , col = "purple", main = " Logistic Regression ROC")
+  
+  #FNR
+  prob_class = predict(M1, newdata = data[test,], type = "response")
+  predicted_classes = ifelse(prob > 0.5, 1, 0)
+  actual_classes = data[test,]$diabetes
+  conf_matrix = table(Predicted = predicted_classes, Actual = actual_classes) ; conf_matrix
+  fnr_glm = conf_matrix[1,2]/sum(conf_matrix[,2]) ; fnr_glm #0.3760733
+  
+  
+#Decision Tree
+  library("rpart")
+  library("rpart.plot")
+    fit <- rpart(diabetes ~ age + gender + blood_glucose_level + HbA1c_level + bmi 
+                 + smoking_history + heart_disease + hypertension , 
+                 method="class", #class label we always use this because it's a categorical response 
+                 data= data[-test,],
+                 control=rpart.control(cp=0.1), ### CHECK IF MINSPLIT OR CP
+                 parms=list(split='information')) 
+  
+  rpart.plot(fit, type = 4 , extra =2)
+  predictions = predict(fit, newdata = data[test,1:8], type = "class")
+  actual = data[test,9]
+  
+  #ROC
+  library(ROCR)
+  pred.M2 = predict(fit, newdata = data[test,1:8], type ='prob') # GET THE PROBABILTIES of No and Yes, NOT THE CLASS
+  score2 = pred.M2[,2] # ONLY TAKE THE PROBABILITY OF YES
+  
+  pred_dt = prediction(score2, actual)
+  roc_dt = performance(pred_dt, measure="tpr", x.measure="fpr")
+  plot(roc_dt, col="purple",main = "Decision Tree ROC" )
+  
+  auc2 = performance(pred_dt , measure ="auc")
+  auc2@y.values[[1]] #0.836004
+  
+  #FNR 
+  confusion_matrix1=table(predictions, actual );confusion_matrix1
+  fnr_dt = confusion_matrix1[1,2]/sum(confusion_matrix1[,2]);fnr_dt #0.3279908
+
+
+#Naive Bayes
+  #Removal of Gender and Smoking History(Not Used)
+  library(e1071)
+  NB = naiveBayes(diabetes ~ age + blood_glucose_level + HbA1c_level + bmi 
+                  + heart_disease + hypertension, data[-test,])
+  #AUC: 0.9497 , FNR:0.37435
+  
+  #Removal of Gender (Not Used)
+  library(e1071)
+  NB = naiveBayes(diabetes ~ age + smoking_history+ blood_glucose_level + HbA1c_level + bmi 
+                  + heart_disease + hypertension, data[-test,])
+  #AUC:0.9494, FNR:0.3606
+  
+  #Main Model
+  library(e1071)
+  NB = naiveBayes(diabetes ~ age + gender + blood_glucose_level + HbA1c_level + bmi 
+                  + smoking_history + heart_disease + hypertension, data[-test,])
+  #AUC: 0.9496, FNR: 0.35832
+  
+  #ROC
+  library(ROCR)
+  pred.NB = predict(NB ,data[test,1:8],type = "raw")
+  score1 = pred.NB[, 2] #Taking only probability of YES
+  pred_nb = prediction(score1, data[test,9])
+  roc_nb = performance(pred_nb, measure="tpr", x.measure="fpr")
+  plot(roc_nb,  col = "purple", main = "Naive Bayes ROC Curve") 
+  auc_nb = performance(pred_nb , "auc")@y.values[[1]]; auc_nb #0.9496461
+  
+  #FNR
+  prediction_nb = predict(NB ,data[test,1:8],type = "class")
+  actual_nb = data[test,9]
+  conf_matrix_nb = table(prediction_nb, actual_nb); conf_matrix_nb
+  fnr_nb = conf_matrix_nb[1,2]/sum(conf_matrix_nb[,2]) ; fnr_nb #0.3583286
+  
+
