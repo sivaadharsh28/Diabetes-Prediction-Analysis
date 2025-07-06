@@ -67,25 +67,6 @@ The dataset contains the following explanatory variables and response variable:
 
 ---
 
-## **How to Run**
-### **Prerequisites**
-- **R Environment**: Install R and required libraries (`rpart`, `e1071`, `ROCR`, etc.).
-- Dataset: Ensure the `diabetes-dataset.csv` file is in the working directory.
-
-### **Execution Steps**
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/sivaadharsh28/DSA1101_Assignment2.git
-   cd DSA1101_Assignment2
-   ```
-2. Run the R script in the terminal or an IDE:
-   ```R
-   source("diabetes_analysis.R")
-   ```
-3. Results, including ROC curves, performance metrics, and visualizations, will be generated.
-
----
-
 ## **Project Structure**
 ```
 DSA1101_Assignment2/
